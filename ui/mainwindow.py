@@ -15,6 +15,8 @@ from PyQt5.uic import loadUiType
 
 import canopen
 
+from .interfacedialog import InterfaceDialog
+
 # --
 
 def datatype_group_description(datatype):
@@ -83,8 +85,54 @@ class MainWindow(QtWidgets.QMainWindow):
         Ui_Class, _ = loadUiType('ui/mainwindow.ui')
         self.ui = Ui_Class()
         self.ui.setupUi(self)
+        self.ui.actionConnect.setEnabled(False)
+        self.ui.actionDisconnect.setEnabled(False)
+        self.ui.pushButton_Read.setEnabled(False)
+        self.ui.pushButton_Write.setEnabled(False)
+
+        self.network = None
+        self.node = None
+        self.node_id = 0
 
     # --
+
+    @Slot()
+    def on_actionConnect_triggered(self):
+        assert self.network
+
+        dlg = InterfaceDialog(self)
+
+        od = self.node.object_dictionary
+        if od.bitrate is not None:
+            dlg.select_bitrate(od.bitrate/1000)
+
+        ok = dlg.exec_()
+        if ok:
+            interface = dlg.interface()
+            channel = dlg.channel()
+            bitrate = dlg.bitrate()
+
+            try:
+                if self.network.bus:
+                    self.network.disconnect()
+                self.network.connect(channel, bustype=interface, bitrate=bitrate*1000)
+                self.ui.actionDisconnect.setEnabled(True)
+            except Exception as e:
+                self.ui.statusbar.showMessage(str(e), 5000)
+
+        self.update_push_buttons()
+
+    @Slot()
+    def on_actionDisconnect_triggered(self):
+        assert self.network.bus
+
+        try:
+            self.network.disconnect()
+        except Exception as e:
+            self.ui.statusbar.showMessage(str(e), 5000)
+
+        self.ui.actionDisconnect.setEnabled(False)
+        self.update_push_buttons()
 
     @Slot()
     def on_actionExit_triggered(self):
@@ -98,6 +146,9 @@ class MainWindow(QtWidgets.QMainWindow):
             'CANopenGUI v0.1\n'
             'A simple CANopen Object Browser\n'
             'Copyright 2017 Ulf Erikson\n'
+            '\n'
+            'This software is based on:\n'
+            'Qt (PyQt), python-can, canopen'
         )
 
     # --
@@ -108,6 +159,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def get_current_index(self):
         current_item = self.get_currently_selected_item()
+        if current_item is None:
+            return None, None
         parent_item = current_item.parent()
         if parent_item is not None:
             index = int(parent_item.data(0, Qt.DisplayRole), 16)
@@ -120,9 +173,19 @@ class MainWindow(QtWidgets.QMainWindow):
     def get_dictionary_object(self, index, subindex):
         try:
             if subindex is not None:
-                obj = self.od[index][subindex]
+                obj = self.node.object_dictionary[index][subindex]
             else:
-                obj = self.od[index]
+                obj = self.node.object_dictionary[index]
+        except Exception as e:
+            obj = None
+        return obj
+
+    def get_sdo_object(self, index, subindex):
+        try:
+            if subindex is not None:
+                obj = self.node.sdo[index][subindex]
+            else:
+                obj = self.node.sdo[index]
         except Exception as e:
             obj = None
         return obj
@@ -130,6 +193,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def get_current_dictionary_object(self):
         index, subindex = self.get_current_index()
         obj = self.get_dictionary_object(index, subindex)
+        return obj
+
+    def get_current_sdo_object(self):
+        index, subindex = self.get_current_index()
+        obj = self.get_sdo_object(index, subindex)
         return obj
 
     # --
@@ -140,6 +208,26 @@ class MainWindow(QtWidgets.QMainWindow):
             return od
         except Exception as e:
             self.ui.statusbar.showMessage(str(e), 5000)
+
+    def get_node_id(self, od=None):
+        node_id = self.ui.spinBox_NodeId.value()
+        if od and od.node_id and od.node_id!=node_id:
+            node_id = od.node_id
+            self.ui.spinBox_NodeId.setValue(node_id)
+        return node_id
+
+    def create_network_node(self, node_id, od):
+        # Start with creating a network representing a CAN bus
+        network = canopen.Network()
+
+        try:
+            # Add a node with its corresponding Object Dictionary
+            node = network.add_node(node_id, od)
+        except Exception as e:
+            self.ui.statusbar.showMessage(str(e), 5000)
+            network, node = None, None
+
+        return network, node
 
     def populate_treewidget(self, od):
         self.ui.treeWidget_ObjectDictionary.clear()
@@ -156,12 +244,11 @@ class MainWindow(QtWidgets.QMainWindow):
                     parent.addChild(child)
             except:
                 pass
-        self.od = od
         self.ui.treeWidget_ObjectDictionary.setCurrentItem(
             self.ui.treeWidget_ObjectDictionary.topLevelItem(0))
 
     @Slot()
-    def on_actionOpen_triggered(self):
+    def on_pushButton_Browse_clicked(self):
         fname, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             'Open EDS file',
@@ -171,7 +258,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if fname:
             od = self.import_object_dictionary(fname)
             if od:
-                self.populate_treewidget(od)
+                node_id = self.get_node_id(od)
+                network, node = self.create_network_node(node_id, od)
+                if network and node:
+                    self.ui.actionConnect.setEnabled(True)
+                    self.ui.lineEdit_EDS.setText(fname)
+                    self.network = network
+                    self.node_id = node_id
+                    self.node = node
+                    self.populate_treewidget(node.object_dictionary)
 
     # --
     # Item attributes
@@ -221,6 +316,43 @@ class MainWindow(QtWidgets.QMainWindow):
             self.clear_attributes()
         else:
             self.update_attributes()
+        self.ui.lineEdit_CurrentValue.setText('')
+        self.update_push_buttons()
+
+    # --
+    # Read/Write push buttons
+
+    def update_push_buttons(self):
+        obj = self.get_current_dictionary_object()
+        access_txt = getattr(obj, 'access_type', '')
+        has_read_access = access_txt.startswith('rw') or access_txt in ['ro', 'const']
+        has_write_access = access_txt.startswith('rw') or access_txt in ['wo']
+        has_connection = self.network is not None and self.network.bus is not None
+        self.ui.pushButton_Read.setEnabled(has_connection and has_read_access)
+        self.ui.pushButton_Write.setEnabled(has_connection and has_write_access)
+
+    @Slot()
+    def on_pushButton_Read_clicked(self):
+        obj = self.get_current_sdo_object()
+        if obj is not None:
+            try:
+                data = obj.raw
+            except Exception as e:
+                self.ui.statusbar.showMessage('Read ERROR: '+str(e), 5000)
+                data = ''
+
+            self.ui.lineEdit_CurrentValue.setText(str(data))
+
+    @Slot()
+    def on_pushButton_Write_clicked(self):
+        obj = self.get_current_sdo_object()
+        if obj is not None:
+            data = self.ui.lineEdit_CurrentValue.text().strip()
+            if data:
+                try:
+                    obj.raw = data
+                except Exception as e:
+                    self.ui.statusbar.showMessage('Write ERROR: '+str(e), 5000)
 
 # ----------
 # EOF
