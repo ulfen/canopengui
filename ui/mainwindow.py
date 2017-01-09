@@ -8,10 +8,22 @@ CANopenGUI MainWindow
 import sys
 import os
 
-from PyQt5 import QtWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtCore import pyqtSlot as Slot
-from PyQt5.uic import loadUiType
+try:
+    from PySide import QtGui as QtWidgets
+    from PySide.QtCore import Qt
+    from PySide.QtCore import Slot
+    from .pyside_loadUiType import loadUiType
+except ImportError:
+    try:
+        from PyQt5 import QtWidgets
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtCore import pyqtSlot as Slot
+        from PyQt5.uic import loadUiType
+    except ImportError:
+        from PyQt4 import QtGui as QtWidgets
+        from PyQt4.QtCore import Qt
+        from PyQt4.QtCore import pyqtSlot as Slot
+        from PyQt4.uic import loadUiType
 
 import canopen
 
@@ -152,7 +164,7 @@ class MainWindow(QtWidgets.QMainWindow):
             'Copyright 2017 Ulf Erikson\n'
             '\n'
             'This software is based on:\n'
-            'Qt (PyQt), python-can, canopen'
+            'Qt (PySide/PyQt), python-can, canopen'
         )
 
     # --
@@ -253,12 +265,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def on_pushButton_Browse_clicked(self):
-        fname, _ = QtWidgets.QFileDialog.getOpenFileName(
+        selection = QtWidgets.QFileDialog.getOpenFileName(
             self,
             'Open EDS file',
             '',
             'CANopen Files (*.eds *.epf);;'
             'All Files (*.*)')
+        fname = selection[0] if isinstance(selection, tuple) else selection
         if fname:
             od = self.import_object_dictionary(fname)
             if od:

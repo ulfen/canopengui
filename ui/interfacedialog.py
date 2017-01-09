@@ -5,10 +5,22 @@
 CAN Interface Settings Dialog
 """
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtCore import pyqtSlot as Slot
-from PyQt5.QtWidgets import QDialog
-from PyQt5.uic import loadUiType
+try:
+    from PySide.QtCore import Qt
+    from PySide.QtCore import Slot
+    from PySide.QtGui import QDialog
+    from .pyside_loadUiType import loadUiType
+except ImportError:
+    try:
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtCore import pyqtSlot as Slot
+        from PyQt5.QtWidgets import QDialog
+        from PyQt5.uic import loadUiType
+    except ImportError:
+        from PyQt4.QtCore import Qt
+        from PyQt4.QtCore import pyqtSlot as Slot
+        from PyQt4.QtGui import QDialog
+        from PyQt4.uic import loadUiType
 
 import can
 
