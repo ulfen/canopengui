@@ -94,6 +94,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.node = None
         self.node_id = 0
 
+    def __del__(self):
+        if self.network and self.network.bus:
+            self.network.disconnect()
+
     # --
 
     @Slot()
