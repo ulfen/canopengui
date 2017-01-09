@@ -14,12 +14,13 @@ import can
 
 # --
 
-bitrate_map = {
+canopen_bitrates = {
     1000:'1000 kbit/s',
     800:'800 kbit/s',
     500:'500 kbit/s',
     250:'250 kbit/s',
     125:'125 kbit/s',
+    100:'100 kbit/s',
     50:'50 kbit/s',
     20:'20 kbit/s',
     10:'10 kbit/s',
@@ -37,7 +38,7 @@ class InterfaceDialog(QDialog):
         self.ui.setupUi(self)
 
         self.ui.comboBox_interface.addItems(sorted(can.interfaces.interface.VALID_INTERFACES))
-        self.set_bitrates(bitrate_map)
+        self.set_bitrates(canopen_bitrates)
         self.selection = {}
 
         cfg = can.util.load_config()
@@ -58,11 +59,11 @@ class InterfaceDialog(QDialog):
 
     def set_bitrates(self, bitrates):
         self.ui.comboBox_bitrate.clear()
-        self.ui.comboBox_bitrate.addItems([bitrate_map[baud] for baud in sorted(bitrates, reverse=True)])
+        self.ui.comboBox_bitrate.addItems([canopen_bitrates[baud] for baud in sorted(bitrates, reverse=True)])
 
     def select_bitrate(self, bitrate):
-        if bitrate in bitrate_map:
-            text = bitrate_map[bitrate]
+        if bitrate in canopen_bitrates:
+            text = canopen_bitrates[bitrate]
             index = self.ui.comboBox_bitrate.findText(text)
             self.ui.comboBox_bitrate.setCurrentIndex(index)
 
@@ -97,7 +98,7 @@ class InterfaceDialog(QDialog):
 
     def bitrate(self):
         text = self.ui.comboBox_bitrate.currentText()
-        for kbit_s, desc in bitrate_map.items():
+        for kbit_s, desc in canopen_bitrates.items():
             if desc == text:
                 return kbit_s
 
